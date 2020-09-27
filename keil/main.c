@@ -1,9 +1,11 @@
 #include <stm32f10x.h>
 #include <stdio.h>
 
+//declearing some variables
 int c=0,desiredSpeed,a,flag=0;
 char str[20];
 
+//defining the usart print string function
 void print(char *string){
 	while(*string){
 		while(!(USART1->SR & USART_SR_TXE));
@@ -11,16 +13,17 @@ void print(char *string){
 	}
 }
 
+//usart interrupt function
 void USART1_IRQHandler(void){
-	USART1->SR &=! (USART_SR_RXNE);
+	USART1->SR &=! (USART_SR_RXNE);   //disable usart interrupt flag
 	int i;
-	i = (USART1->DR) - 48;
-	if(i>=0 && i<10){
+	i = (USART1->DR) - 48;     //turning asci codes into integer numbers
+	if(i>=0 && i<10){          //user writes the refrence speed
 		a = 10*a + i;
 		sprintf(str,"%d",i);
 		print(str);
 	}
-	if(i == -35){
+	if(i == -35){             //this will set the refrence speed
 		sprintf(str,"\n\rDone.");
 		print(str);
 		desiredSpeed = a;
@@ -29,11 +32,13 @@ void USART1_IRQHandler(void){
 	}
 }
 
+//using external interrupt as counter
 void EXTI4_IRQHandler(void){
 	EXTI->PR &=! (EXTI_PR_PR4);
 	c++;
 }
 
+//counts the number of pulses every second as motor's speed
 void TIM1_UP_IRQHandler(void){
 	TIM1->SR &=! (TIM_SR_UIF);
 	int i,j;
@@ -41,6 +46,8 @@ void TIM1_UP_IRQHandler(void){
 	c=0;
 	sprintf(str,"\n\rCurrent Speed = %d",i);
 	print(str);
+
+	//this is the pwm signal duty cycle regulation part in regard to the error signal which happens every second
 	if(i>desiredSpeed){
 		j=i-desiredSpeed;
 		if(j>5) TIM3->CCR2 +=5;
@@ -64,18 +71,21 @@ void TIM1_UP_IRQHandler(void){
 
 	
 int main(){
+	//performing gpio ports and clock
 	RCC->APB2ENR |= RCC_APB2ENR_IOPAEN;
 	GPIOA->CRL = 0;
 	GPIOA->CRL |= GPIO_CRL_CNF1_0 | GPIO_CRL_CNF0_0;
 	GPIOA->CRL |= GPIO_CRL_MODE2_0 | GPIO_CRL_MODE3_0;
 	GPIOA->ODR &=! GPIO_ODR_ODR2 | GPIO_ODR_ODR3;
 	
+	//enabling external interrupt to read motor speed
 	GPIOA->CRL |= GPIO_CRL_CNF4_0;
 	EXTI->IMR |= EXTI_IMR_MR4;
 	EXTI->RTSR |= EXTI_RTSR_TR4;
 	NVIC_EnableIRQ(EXTI4_IRQn);
 	NVIC_SetPriority(EXTI4_IRQn,2);
 	
+	//enabling usart to get refrence speed from user
 	RCC->APB2ENR |= RCC_APB2ENR_USART1EN;
 	GPIOA->CRH = 0;
 	GPIOA->CRH |= GPIO_CRH_CNF9_1 | GPIO_CRH_MODE9_0 | GPIO_CRH_CNF10_0;
@@ -89,6 +99,7 @@ int main(){
 	print(str);
 	while(!flag);
 	
+	//enables timer1 to get motor speed and generate pwm signal each second
 	RCC->APB2ENR |= RCC_APB2ENR_TIM1EN;
 	TIM1->PSC = 3999;
 	TIM1->ARR = 999;
@@ -98,6 +109,7 @@ int main(){
 	NVIC_SetPriority(TIM1_UP_IRQn,1);
 	TIM1->CR1 |= TIM_CR1_CEN; 
 	
+	//generates the pwm signal using timer3
 	RCC->APB1ENR |= RCC_APB1ENR_TIM3EN;
 	GPIOA->CRL |= GPIO_CRL_CNF7_1 | GPIO_CRL_MODE7_0;
 	TIM3->PSC = 3999;
@@ -110,6 +122,7 @@ int main(){
 	TIM3->CR1 |= TIM_CR1_CEN;	
 	
 	while(1){
+		//sets the direction of motor's movement
 		if((GPIOA->IDR & GPIO_IDR_IDR0) == 0){
 			GPIOA->ODR &=! GPIO_ODR_ODR3;
 			GPIOA->ODR |= GPIO_ODR_ODR2;
